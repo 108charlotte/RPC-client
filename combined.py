@@ -20,8 +20,8 @@ def run_server():
         server.register_introspection_functions()
 
         def heartbeat(json_string): 
-            context = json.load(json_string)
-            print(context.type())
+            context = json.loads(json_string)
+            print(type(context))
             name = context["student_name"]
             timestamp = context["timestamp"]
             if time.time() - timestamp < 43200: # 12 hours equivalent in epoch seconds
