@@ -8,7 +8,7 @@ import threading
 
 # client
 def run_client(): 
-    with xmlrpc.client.ServerProxy("http://localhost:6363") as proxy: 
+    with xmlrpc.client.ServerProxy("http://141.165.50.157:6363") as proxy: 
         while True: 
             error = proxy.heartbeat(json.dumps({"student_name": "charlotte", "timestamp": int(time.time())}))
             print(f"Server returned code {error}")
@@ -16,15 +16,14 @@ def run_client():
 
 # server
 def run_server(): 
-    with SimpleXMLRPCServer(('localhost', 6363)) as server: 
+    with SimpleXMLRPCServer(('http://141.165.50.133', 6363)) as server: 
         server.register_introspection_functions()
 
         def heartbeat(json_string): 
             context = json.loads(json_string)
-            print(type(context))
             name = context["student_name"]
             timestamp = context["timestamp"]
-            if time.time() - timestamp < 43200: # 12 hours equivalent in epoch seconds
+            if time.time() - timestamp < 300: # 5 mins equivalent in epoch seconds
                 print(f"received successful request from {name} at {timestamp}")
                 return 0 # for success
             return 1 # for failiure
