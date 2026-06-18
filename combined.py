@@ -8,7 +8,7 @@ import threading
 
 # client
 def run_client(): 
-    with xmlrpc.client.ServerProxy("141.165.50.157:6363") as proxy: 
+    with xmlrpc.client.ServerProxy("http://141.165.50.157:6363") as proxy: 
         while True: 
             error = proxy.heartbeat(json.dumps({"student_name": "charlotte", "timestamp": int(time.time())}))
             print(f"Server returned code {error}")
