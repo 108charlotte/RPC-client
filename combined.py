@@ -10,21 +10,52 @@ import threading
 def run_client(): 
     with xmlrpc.client.ServerProxy("http://141.165.50.162:6363") as proxy: 
         while True: 
-            error = proxy.heartbeat(json.dumps({"student_name": "charlotte", "timestamp": int(time.time())}))
+            error = proxy.heartbeat(json.dumps({"student_name": "Charlotte", "timestamp": int(time.time()), "ip_address": "141.165.50.133"}))
             print(f"Server returned code {error}")
             time.sleep(10) # 10 second sleep before sending another heartbeat ping
 
 # server
+# TODO: implement gossiping protocol: 
+'''
+- maintain client list (necessary for quorum) - all clients server has received heartbeats from
+- when u get accepted heartbeat from someone else: send heartbeat to next node in the client list alphabetically to you in the list, loop back to beginning if @ end of alphabet
+- toss if from yourself
+- include ip_address in heartbeat
+- include name in heartbeat payload
+'''
 def run_server(): 
     with SimpleXMLRPCServer(('141.165.50.133', 6363)) as server: 
         server.register_introspection_functions()
+        server_name = "Charlotte"
+        server_ip_addr = "141.165.50.133"
+
+        client_list = [{"ip_address": server_ip_addr, "name": server_name}] # put myself in client list
 
         def heartbeat(json_string): 
             context = json.loads(json_string)
             name = context["student_name"]
             timestamp = context["timestamp"]
-            if abs(time.time() - timestamp) < 300: # 5 mins equivalent in epoch seconds
+            ip_addr = context["ip_address"]
+
+            if abs(time.time() - timestamp) < 120:
                 print(f"received successful request from {name} at {timestamp}")
+                all_ip_addrs = [client["ip_address"] for client in client_list]
+                if not ip_addr in all_ip_addrs: # ip address not already in list, then add to list along with name
+                    print("IP address {ip_addr} not in client list")
+                    client_list.append({"ip_address": ip_addr, "student_name": name})
+                    # sort: https://stackoverflow.com/questions/72899/how-can-i-sort-a-list-of-dictionaries-by-a-value-of-the-dictionary-in-python
+                    client_list = sorted(client_list, key=lambda d: d["student_name"])
+                    print(f"Added {ip_addr} for {name} to client_list")
+                    # get index of name
+                    charlotte_index = next((index for (index, d) in enumerate(client_list) if d["student_name"] == "Charlotte"), None)
+                    # skip over node that heartbeat is from when u get next node alphabetically
+                    next_index = charlotte_index + 1 if charlotte_index >= len(client_list) else 0 # wrap around to beginning
+                    if client_list[next_index]["ip_address"] == ip_addr: 
+                        next_index = next_index + 1 if next_index >= len(client_list) else 0 # same as above, repetitive and should fix
+                    with xmlrpc.client.ServerProxy(client_list[next_index]["ip_address"] + ":6363") as proxy: 
+                        error = proxy.heartbeat(json.dumps({"student_name": name, "timestamp": timestamp, "ip_address": ip_addr))
+                        print(f"Received {error} from {client_list[next_index]['ip_address']")
+     
                 return 0 # for success
             return 1 # for failiure
 
