@@ -16,7 +16,7 @@ def run_client():
 
 # server
 def run_server(): 
-    with SimpleXMLRPCServer(('http://141.165.50.133', 6363)) as server: 
+    with SimpleXMLRPCServer(('141.165.50.133', 6363)) as server: 
         server.register_introspection_functions()
 
         def heartbeat(json_string): 
