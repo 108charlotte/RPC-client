@@ -23,7 +23,7 @@ def run_server():
             context = json.loads(json_string)
             name = context["student_name"]
             timestamp = context["timestamp"]
-            if time.time() - timestamp < 300: # 5 mins equivalent in epoch seconds
+            if abs(time.time() - timestamp) < 300: # 5 mins equivalent in epoch seconds
                 print(f"received successful request from {name} at {timestamp}")
                 return 0 # for success
             return 1 # for failiure
