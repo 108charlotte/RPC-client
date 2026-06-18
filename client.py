@@ -3,7 +3,7 @@ import xmlrpc.client
 import time
 import json
 
-with xmlrpc.client.ServerProxy("http://192.168.137.153:6363") as proxy: 
+with xmlrpc.client.ServerProxy("http://141/165/50/132:6363") as proxy: 
     print(proxy.system.listMethods())
     help_message = proxy.system.methodHelp("heartbeat")
     print(help_message)
