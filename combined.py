@@ -21,6 +21,7 @@ def run_server():
 
         def heartbeat(json_string): 
             context = json.load(json_string)
+            print(context.type())
             name = context["student_name"]
             timestamp = context["timestamp"]
             if time.time() - timestamp < 43200: # 12 hours equivalent in epoch seconds
