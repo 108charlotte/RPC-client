@@ -12,7 +12,7 @@ socket.setdefaulttimeout(5)
 server_name = "Charlotte"
 server_ip_addr = "141.165.50.133"
 
-start_server_to_ping = "141.165.50.162"
+start_server_to_ping = "141.165.50.153"
 
 client_list = []
 num_heartbeats_sent = 0 # used for deciding when to stop pinging start server
@@ -23,7 +23,7 @@ def send_heartbeat_to_ip(ip_dest, student_name, timestamp, ip_address, string_id
             print()
             if string_identifier != "CLIENT": 
                 print(f"{string_identifier}: Sending heartbeat with name: {student_name}, timestamp: {timestamp}, and ip address: {ip_address} to {ip_dest}")
-            error = proxy.heartbeat(json.dumps({"student_name": student_name, "timestamp": timestamp, "ip_address": ip_address}))
+            error = proxy.heartbeat(json.dumps({"student_name": student_name, "timestamp": int(timestamp), "ip_address": ip_address}))
             print(f"{string_identifier}: Sent heartbeat to {ip_dest}, server returned code {error}")
     except Exception as e: 
         print(f"{string_identifier}: Error - {e}")
@@ -39,6 +39,13 @@ def get_alphabetical_next_index_from_me():
             client_index = i
             break
     return client_index
+    
+def purge_client_list(): 
+    global client_list
+    # go through client list and remove anything with a timestamp over 1 min old EXCEPT for my own client
+    client_list = [client for client in client_list if abs(client["timestamp"] - time.time()) < 60]
+    print(f"\nSERVER: New client list, old timestamps removed: {client_list}")
+    
 
 def get_next_client_index(curr_index): 
     global client_list
@@ -50,11 +57,12 @@ def run_client():
     global client_list
     while True: 
         print(f"\nRUNNING CLIENT")
+        purge_client_list()
         if num_heartbeats_sent < 2: 
             ip_addr_to_send_to = start_server_to_ping
             send_heartbeat = True
         else: 
-            if len(client_list) > 1: 
+            if len(client_list) >= 1: 
                 ip_addr_to_send_to = client_list[get_alphabetical_next_index_from_me()]["ip_address"]
                 send_heartbeat = True
             else: 
@@ -106,9 +114,7 @@ def heartbeat(json_string):
         print(f"SERVER: Received invalid timestamp from {name} at {ip_addr} - {timestamp} was {abs(timestamp - time.time())} off")
         return 1
     
-    # go through client list and remove anything with a timestamp over 1 min old EXCEPT for my own client
-    client_list = [client for client in client_list if abs(client["timestamp"] - time.time()) < 60]
-    print(f"\nSERVER: New client list, old timestamps removed: {client_list}")
+    purge_client_list()
 
     # send info to next in chain
     next_index = get_alphabetical_next_index_from_me()
@@ -118,6 +124,10 @@ def heartbeat(json_string):
         next_index = get_next_client_index(next_index)
         next_item = client_list[next_index]
         print(f"SERVER: Skipping {old_item['student_name']} to go to {next_item['student_name']}")
+       
+    if next_item["ip_address"] == ip_addr: 
+        print(f"SERVER: too few people in network, not forwarding")
+        return 1
     
     print(f"SERVER: forwarding {name} to {next_item['student_name']} (sending to IP: {next_item['ip_address']})")
     threading.Thread(target=send_heartbeat_to_ip, args=(next_item["ip_address"], name, timestamp, ip_addr, "SERVER"), daemon=True).start()
