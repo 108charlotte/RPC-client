@@ -9,59 +9,79 @@ import threading
 server_name = "Charlotte"
 server_ip_addr = "141.165.50.133"
 
-client_list = [{"ip_address": server_ip_addr, "student_name": server_name}] # put myself in client list
+start_server_to_ping = "141.165.50.176"
+
+client_list = [{"ip_address": server_ip_addr, "student_name": server_name, "timestamp": int(time.time())}] # put myself in client list
 print(f"Client list: {client_list}")
 
+def get_next_in_client_list(init_index): 
+    return client_list[(init_index + 1) % len(client_list)]
+
+def send_heartbeat_to_ip(ip_dest, student_name, timestamp, ip_address, string_identifier): 
+    try: 
+        with xmlrpc.client.ServerProxy("http://" + ip_dest + ":6363") as proxy: 
+            print(f"{string_identifier}: Sending heartbeat to {ip_dest}")
+            error = proxy.heartbeat(json.dumps({"student_name": student_name, "timestamp": timestamp, "ip_address": ip_address}))
+            print(f"{string_identifier}: Sent heartbeat to {ip_dest}, server returned code {error}")
+            return "Success"
+    except Exception as e: 
+        return e
 
 # client
 def run_client(): 
-    with xmlrpc.client.ServerProxy("http://141.165.50.176:6363") as proxy: 
-        while True: 
-            error = proxy.heartbeat(json.dumps({"student_name": "Charlotte", "timestamp": int(time.time()), "ip_address": "141.165.50.133"}))
-            print(f"Server returned code {error}")
-            time.sleep(10) # 10 second sleep before sending another heartbeat ping
+    # choose who to ping based on who is live
+    if len(client_list) > 1: 
+        # assumes client list currently in order; every time a new client is added, it is put back in order
+        my_position = next((index for (index, d) in enumerate(client_list) if d["student_name"] == "Charlotte"), None)
+        server_to_send_to = get_next_in_client_list(my_position)
+        ip_addr_to_send = server_to_send_to["ip_address"]
+    else: 
+        ip_addr_to_send = start_server_to_ping
+    while True: 
+        send_heartbeat_to_ip(ip_addr_to_send, "Charlotte", time.time(), server_ip_addr, "CLIENT")
+        time.sleep(10) # 10 second sleep before sending another heartbeat ping
 
 # server
-# TODO: implement gossiping protocol: 
-'''
-- maintain client list (necessary for quorum) - all clients server has received heartbeats from
-- when u get accepted heartbeat from someone else: send heartbeat to next node in the client list alphabetically to you in the list, loop back to beginning if @ end of alphabet
-- toss if from yourself
-- include ip_address in heartbeat
-- include name in heartbeat payload
-'''
 def heartbeat(json_string): 
     global client_list
-    print("RECEIVED HEARTBEAT")
     context = json.loads(json_string)
     name = context["student_name"]
     timestamp = context["timestamp"]
     ip_addr = context["ip_address"]
-    print(f"Received name: {name}, timestamp: {timestamp}, ip_addr: {ip_addr}")
-    print(f"Client list: {client_list}")
+    print(f"SERVER: Received heartbeat from name: {name}, timestamp: {timestamp}, ip_addr: {ip_addr}")
     
     if abs(time.time() - timestamp) < 60:
-        print(f"received successful request from {name} at {timestamp}")
+        print(f"SERVER: Timestamp {timestamp} valid for {name} at {ip_addr}")
         all_ip_addrs = [client["ip_address"] for client in client_list]
         # need to include timestamps and update
         if not ip_addr in all_ip_addrs: # ip address not already in list, then add to list along with name
-            print(f"IP address {ip_addr} not in client list")
-            client_list.append({"ip_address": ip_addr, "student_name": name})
+            print(f"SERVER: IP address {ip_addr} not in client list")
+            client_list.append({"ip_address": ip_addr, "student_name": name, "timestamp": timestamp})
             # sort: https://stackoverflow.com/questions/72899/how-can-i-sort-a-list-of-dictionaries-by-a-value-of-the-dictionary-in-python
             client_list = sorted(client_list, key=lambda d: d["student_name"])
-            print(f"Added {ip_addr} for {name} to client_list")
-           
-        # get index of name
-        charlotte_index = next((index for (index, d) in enumerate(client_list) if d["student_name"] == "Charlotte"), None)
-        # skip over node that heartbeat is from when u get next node alphabetically
-        next_index = charlotte_index + 1 if charlotte_index >= len(client_list) else 0 # wrap around to beginning
-        if client_list[next_index]["ip_address"] == ip_addr: 
-            next_index = next_index + 1 if next_index >= len(client_list) else 0 # same as above, repetitive and should fix
-        with xmlrpc.client.ServerProxy("http://" + client_list[next_index]["ip_address"] + ":6363") as proxy: 
-            error = proxy.heartbeat(json.dumps({"student_name": name, "timestamp": timestamp, "ip_address": ip_addr}))
-            print(f"Received {error} from {client_list[next_index]['ip_address']}")
+            print(f"SERVER: Added {ip_addr} for {name} at {timestamp} to client_list")
+            print(f"SERVER: {len(client_list)} people in client list: {client_list}")
+        else: 
+            # update timestamp of existing entry
+            print(f"SERVER: Client exists in client list, updating client timestamp...")
+            client_index = next((index for (index, d) in enumerate(client_list) if d["ip_address"] == ip_addr), None)
+            if not client_index: print(f"SERVER: BUG - client index not found in list")
+            client_list[client_index]["timestamp"] = timestamp
+    
+    # go through client list and remove anything with a timestamp over 1 min old
+    client_list = [client for client in client_list if abs(client["timestamp"] - time.time()) < 60]
+
+    # send info to next in chain
+    my_position = next((index for (index, d) in enumerate(client_list) if d["student_name"] == "Charlotte"), None)
+    next_index = get_next_in_client_list(my_position)
+    if client_list[next_index]["ip_address"] == ip_addr: 
+        next_index = get_next_in_client_list(next_index)
+    
+    error = send_heartbeat_to_ip(client_list[next_index]["ip_address"], name, timestamp, ip_addr, "SERVER")
+    if error == "Success": 
         return 0
-    return 1
+    else: 
+        return 1
             
 def run_server(): 
     with SimpleXMLRPCServer(('141.165.50.133', 6363)) as server: 
