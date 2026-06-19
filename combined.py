@@ -68,21 +68,19 @@ def heartbeat(json_string):
     # go through client list and remove anything with a timestamp over 1 min old
     client_list = [client for client in client_list if abs(client["timestamp"] - time.time()) < 60]
     print(f"SERVER: New client list, old timestamps removed: {client_list}")
-    if len(client_list) > 0: 
-        # send info to next in chain
-        my_position = next((index for (index, d) in enumerate(client_list) if d["student_name"] == "Charlotte"), None)
-        next_index =  client_list[(my_position + 1) % len(client_list)]
-        if client_list[next_index]["ip_address"] == ip_addr: 
-            print(f"SERVER: Skipping {client_list['next_index']} to go to {get_next_in_client_list(next_index)}")
-            next_index = get_next_in_client_list(next_index)
-    
-        print(f"SERVER: forwarding {name} to {client_list[next_index]['name']} (sending to IP: {client_list[next_index]['ip_address']})")
-        error = send_heartbeat_to_ip(client_list[next_index]["ip_address"], name, timestamp, ip_addr, "SERVER")
-        if error == "Success": 
-            return 0
-        return 1
-    else: 
-        print(f"SERVER: no one to ping")
+
+    # send info to next in chain
+    my_position = next((index for (index, d) in enumerate(client_list) if d["student_name"] == "Charlotte"), None)
+    next_index =  client_list[(my_position + 1) % len(client_list)]
+    if client_list[next_index]["ip_address"] == ip_addr: 
+        print(f"SERVER: Skipping {client_list['next_index']} to go to {get_next_in_client_list(next_index)}")
+        next_index = get_next_in_client_list(next_index)
+
+    print(f"SERVER: forwarding {name} to {client_list[next_index]['name']} (sending to IP: {client_list[next_index]['ip_address']})")
+    error = send_heartbeat_to_ip(client_list[next_index]["ip_address"], name, timestamp, ip_addr, "SERVER")
+    if error == "Success": 
+        return 0
+    return 1
 
 def run_server(): 
     with SimpleXMLRPCServer(('141.165.50.133', 6363)) as server: 
