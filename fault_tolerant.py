@@ -12,7 +12,7 @@ server_ip_addr = "141.165.50.133"
 start_server_to_ping = "141.165.50.162"
 
 client_list = []
-first_few_heartbeats = True
+num_heartbeats_sent = 0 # used for deciding when to stop pinging start server
 
 def send_heartbeat_to_ip(ip_dest, student_name, timestamp, ip_address, string_identifier): 
     try: 
@@ -27,7 +27,8 @@ def send_heartbeat_to_ip(ip_dest, student_name, timestamp, ip_address, string_id
 
 def get_alphabetical_next_index_from_me(): 
     client_names = [client["student_name"] for client in client_list]
-    closest = difflib.get_close_matches(server_name, client_names, 1)
+    after_me_alphabetically = [name for name in client_names if name > server_name]s
+    closest = difflib.get_close_matches(server_name, after_me_alphabetically, 1)
     client_index = 0
     for i, client in enumerate(client_list): 
         if client["student_name"] == closest: 
@@ -35,9 +36,11 @@ def get_alphabetical_next_index_from_me():
             break
     return client_index
 
+def get_next_client_index(curr_index): 
+    return (curr_index + 1) % len(client_list)
+
 # client
 def run_client(): 
-    send_heartbeat = True
     # choose who to ping based on who is live
     if len(client_list) > 1: 
         # assumes client list currently in order; every time a new client is added, it is put back in order
@@ -51,10 +54,24 @@ def run_client():
         else: 
             print("CLIENT: No one to send heartbeat to :(")
             send_heartbeat = False
-    while send_heartbeat: 
-        send_heartbeat_to_ip(ip_addr_to_send, "Charlotte", time.time(), server_ip_addr, "CLIENT")
-        time.sleep(10) # 10 second sleep before sending another heartbeat ping
-        first_few_heartbeats = False
+    send_heartbeat = True
+    while True: 
+        print(f"\nRUNNING CLIENT")
+        if num_heartbeats_sent < 3: 
+            ip_addr_to_send_to = start_server_to_ping
+            send_heartbeat = True
+        else: 
+            if len(client_list) > 1: 
+                ip_addr_to_send_to = get_alphabetical_next_index_from_me()
+                send_heartbeat = True
+            else: 
+                print(f"CLIENT: No one available to heartbeat to")
+                send_heartbeat = False
+        
+        if send_heartbeat: 
+            send_heartbeat_to_ip(ip_addr_to_send_to, "Charlotte", time.time(), server_ip_addr, "CLIENT")
+
+        time.sleep(10) # 10 second sleep before sending another heartbeat ping/checking if anyone available to send heartbeat ping to
 
 # server
 def heartbeat(json_string): 
@@ -63,7 +80,7 @@ def heartbeat(json_string):
     name = context["student_name"]
     timestamp = int(context["timestamp"])
     ip_addr = context["ip_address"]
-    print()
+    print("\nRUNNING SERVER")
     print(f"SERVER: Received heartbeat with name: {name}, timestamp: {timestamp}, ip_addr: {ip_addr}")
     
     if name == "Charlotte": 
@@ -71,41 +88,42 @@ def heartbeat(json_string):
         return 0
     
     if abs(time.time() - timestamp) < 60:
-        print()
         print(f"SERVER: Timestamp {timestamp} valid for {name} at {ip_addr}")
         all_ip_addrs = [client["ip_address"] for client in client_list]
         # need to include timestamps and update
         if not ip_addr in all_ip_addrs: # ip address not already in list, then add to list along with name
-            print(f"SERVER: IP address {ip_addr} not in client list")
             client_list.append({"ip_address": ip_addr, "student_name": name, "timestamp": timestamp})
             # sort: https://stackoverflow.com/questions/72899/how-can-i-sort-a-list-of-dictionaries-by-a-value-of-the-dictionary-in-python
             client_list = sorted(client_list, key=lambda d: d["student_name"])
             print(f"SERVER: Added {ip_addr} for {name} at {timestamp} to client_list")
             print(f"SERVER: {len(client_list)} people in client list: {client_list}")
-            print()
         else: 
             # update timestamp of existing entry
             print(f"SERVER: Client exists in client list, updating client timestamp...")
             client_index = next((index for (index, d) in enumerate(client_list) if d["ip_address"] == ip_addr), None)
-            if client_index is None: print(f"SERVER: BUG - client index not found in list")
-            client_list[client_index]["timestamp"] = timestamp
+            if client_index is None: 
+                print(f"SERVER: BUG - client index not found in list")
+            else: 
+                client_list[client_index]["timestamp"] = timestamp
+    else: 
+        print(f"SERVER: Received invalid timestamp from {name} at {ip_addr} - {timestamp} was {abs(timestamp - time.time())} off")
     
     # go through client list and remove anything with a timestamp over 1 min old EXCEPT for my own client
     client_list = [client for client in client_list if abs(client["timestamp"] - time.time()) < 60]
-    print(f"SERVER: New client list, old timestamps removed: {client_list}")
+    print(f"\nSERVER: New client list, old timestamps removed: {client_list}")
 
     # send info to next in chain
-    my_position = next((index for (index, d) in enumerate(client_list) if d["student_name"] == "Charlotte"), None)
-    next_index = (my_position + 1) % len(client_list)
+    next_index = get_alphabetical_next_index_from_me()
     next_item = client_list[next_index]
     if next_item["ip_address"] == ip_addr: 
-        print(f"SERVER: Skipping {next_item['student_name']} to go to {client_list[(next_index + 1) % len(client_list)]['student_name']}")
-        next_index = (next_index + 1) % len(client_list)
+        old_item = next_item
+        next_index = get_next_client_index(next_index)
         next_item = client_list[next_index]
+        print(f"SERVER: Skipping {old_item['student_name']} to go to {next_item['student_name']}")
     
     print(f"SERVER: forwarding {name} to {next_item['student_name']} (sending to IP: {next_item['ip_address']})")
-    error = send_heartbeat_to_ip(next_item["ip_address"], name, timestamp, ip_addr, "SERVER")
-    if error == "Success": 
+    response = send_heartbeat_to_ip(next_item["ip_address"], name, timestamp, ip_addr, "SERVER")
+    if response == "Success": 
         return 0
     return 1
 
