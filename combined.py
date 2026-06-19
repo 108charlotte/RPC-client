@@ -75,6 +75,7 @@ def heartbeat(json_string):
     my_position = next((index for (index, d) in enumerate(client_list) if d["student_name"] == "Charlotte"), None)
     next_index = get_next_in_client_list(my_position)
     if client_list[next_index]["ip_address"] == ip_addr: 
+        print(f"SERVER: Skipping {client_list['next_index']} to go to {get_next_in_client_list(next_index)}")
         next_index = get_next_in_client_list(next_index)
     
     error = send_heartbeat_to_ip(client_list[next_index]["ip_address"], name, timestamp, ip_addr, "SERVER")
@@ -86,7 +87,6 @@ def heartbeat(json_string):
 def run_server(): 
     with SimpleXMLRPCServer(('141.165.50.133', 6363)) as server: 
         server.register_introspection_functions()
-        print("SERVER ALIVE")
         server.register_function(heartbeat, "heartbeat")
         server.serve_forever()
 
