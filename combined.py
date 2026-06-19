@@ -9,7 +9,7 @@ import threading
 server_name = "Charlotte"
 server_ip_addr = "141.165.50.133"
 
-start_server_to_ping = "141.165.50.176"
+start_server_to_ping = "141.165.50.162"
 
 client_list = [{"ip_address": server_ip_addr, "student_name": server_name, "timestamp": int(time.time())}] # put myself in client list
 print(f"Client list: {client_list}")
