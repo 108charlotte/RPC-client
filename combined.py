@@ -12,11 +12,12 @@ server_ip_addr = "141.165.50.133"
 start_server_to_ping = "141.165.50.162"
 
 client_list = [{"ip_address": server_ip_addr, "student_name": server_name, "timestamp": int(time.time())}] # put myself in client list
-print(f"Client list: {client_list}")
+first_few_heartbeats = True
 
 def send_heartbeat_to_ip(ip_dest, student_name, timestamp, ip_address, string_identifier): 
     try: 
         with xmlrpc.client.ServerProxy("http://" + ip_dest + ":6363") as proxy: 
+            print()
             print(f"{string_identifier}: Sending heartbeat to {ip_dest}")
             error = proxy.heartbeat(json.dumps({"student_name": student_name, "timestamp": timestamp, "ip_address": ip_address}))
             print(f"{string_identifier}: Sent heartbeat to {ip_dest}, server returned code {error}")
@@ -26,6 +27,7 @@ def send_heartbeat_to_ip(ip_dest, student_name, timestamp, ip_address, string_id
 
 # client
 def run_client(): 
+    send_heartbeat = True
     # choose who to ping based on who is live
     if len(client_list) > 1: 
         # assumes client list currently in order; every time a new client is added, it is put back in order
@@ -33,8 +35,12 @@ def run_client():
         server_to_send_to = client_list[(my_position + 1) % len(client_list)]
         ip_addr_to_send = server_to_send_to["ip_address"]
     else: 
-        ip_addr_to_send = start_server_to_ping
-    while True: 
+        if first_few_heartbeats: 
+            ip_addr_to_send = start_server_to_ping
+        else: 
+            print("CLIENT: No one to send heartbeat to :(")
+            send_heartbeat = False
+    while send_heartbeat: 
         send_heartbeat_to_ip(ip_addr_to_send, "Charlotte", time.time(), server_ip_addr, "CLIENT")
         time.sleep(10) # 10 second sleep before sending another heartbeat ping
 
@@ -45,9 +51,11 @@ def heartbeat(json_string):
     name = context["student_name"]
     timestamp = int(context["timestamp"])
     ip_addr = context["ip_address"]
+    print()
     print(f"SERVER: Received heartbeat from name: {name}, timestamp: {timestamp}, ip_addr: {ip_addr}")
     
     if abs(time.time() - timestamp) < 60:
+        print()
         print(f"SERVER: Timestamp {timestamp} valid for {name} at {ip_addr}")
         all_ip_addrs = [client["ip_address"] for client in client_list]
         # need to include timestamps and update
@@ -58,26 +66,29 @@ def heartbeat(json_string):
             client_list = sorted(client_list, key=lambda d: d["student_name"])
             print(f"SERVER: Added {ip_addr} for {name} at {timestamp} to client_list")
             print(f"SERVER: {len(client_list)} people in client list: {client_list}")
+            print()
         else: 
             # update timestamp of existing entry
             print(f"SERVER: Client exists in client list, updating client timestamp...")
             client_index = next((index for (index, d) in enumerate(client_list) if d["ip_address"] == ip_addr), None)
-            if not client_index: print(f"SERVER: BUG - client index not found in list")
+            if client_index is None: print(f"SERVER: BUG - client index not found in list")
             client_list[client_index]["timestamp"] = timestamp
     
-    # go through client list and remove anything with a timestamp over 1 min old
-    client_list = [client for client in client_list if abs(client["timestamp"] - time.time()) < 60]
+    # go through client list and remove anything with a timestamp over 1 min old EXCEPT for my own client
+    client_list = [client for client in client_list if abs(client["timestamp"] - time.time()) < 60 or client["student_name"] == "Charlotte"]
     print(f"SERVER: New client list, old timestamps removed: {client_list}")
 
     # send info to next in chain
     my_position = next((index for (index, d) in enumerate(client_list) if d["student_name"] == "Charlotte"), None)
-    next_index =  client_list[(my_position + 1) % len(client_list)]
-    if client_list[next_index]["ip_address"] == ip_addr: 
-        print(f"SERVER: Skipping {client_list['next_index']} to go to {get_next_in_client_list(next_index)}")
-        next_index = get_next_in_client_list(next_index)
-
-    print(f"SERVER: forwarding {name} to {client_list[next_index]['name']} (sending to IP: {client_list[next_index]['ip_address']})")
-    error = send_heartbeat_to_ip(client_list[next_index]["ip_address"], name, timestamp, ip_addr, "SERVER")
+    next_index = (my_position + 1) % len(client_list)
+    next_item = client_list[next_index]
+    if next_item["ip_address"] == ip_addr: 
+        print(f"SERVER: Skipping {next_item['student_name']} to go to {client_list[(next_index + 1) % len(client_list)]['student_name']}")
+        next_index = (next_index + 1) % len(client_list)
+        next_item = client_list[next_index]
+    
+    print(f"SERVER: forwarding {name} to {next_item['student_name']} (sending to IP: {next_item['ip_address']})")
+    error = send_heartbeat_to_ip(next_item["ip_address"], name, timestamp, ip_addr, "SERVER")
     if error == "Success": 
         return 0
     return 1
