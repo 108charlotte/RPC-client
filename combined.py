@@ -43,7 +43,7 @@ def heartbeat(json_string):
     global client_list
     context = json.loads(json_string)
     name = context["student_name"]
-    timestamp = context["timestamp"]
+    timestamp = int(context["timestamp"])
     ip_addr = context["ip_address"]
     print(f"SERVER: Received heartbeat from name: {name}, timestamp: {timestamp}, ip_addr: {ip_addr}")
     
