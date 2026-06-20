@@ -58,27 +58,71 @@ def get_next_client_index(curr_index):
     global client_list
     return (curr_index + 1) % len(client_list)
 
+def get_next_2_ip_addrs_to_send_to(exclude_ip, string_identifier): 
+    global client_list
+    if len(client_list) == 0: 
+        return []
+    next_index = get_alphabetical_next_index_from_me()
+    orig_index = next_index # used to tell when there was a full loop (won't forward heartbeat anywhere in that case, bc no need to tell other one that they're alive)
+    next_item = client_list[next_index]
+    next_items = []
+    original_person = next_item
+
+    while next_item["ip_address"] == exclude_ip: # finding next available person who didn't originally send this heartbeat
+        next_index = get_next_client_index(next_index)
+        next_item = client_list[next_index]
+        if next_index == orig_index: # went in full loop and couldn't find any ip addresses that don't match; only 1 other person in network 
+            print(f"{string_identifier}: only 1 other client ip address (length {len(client_list)}), so not forwarding their own heartbeats back to them")
+            print(f"-------------------------------------------------------------------------------------------------------")
+            return []
+
+    final_person = next_item
+    if final_person != original_person: 
+        print(f"{string_identifier}: 1st forward - skipped over {original_person['student_name']} to forward heartbeat to {final_person['student_name']}")
+
+    next_items.append(next_item)
+
+    next_next_index = get_next_client_index(next_index)
+    next_next_item = client_list[next_next_index]
+    original_next_person = next_next_item
+    while next_next_item["ip_address"] == exclude_ip: # don't want to send heartbeat back to the original person who sent it, or send to the same client as the other ping
+        next_next_index = get_next_client_index(next_next_index)
+        next_next_item = client_list[next_next_index]
+
+        if next_next_index == next_index: # went in full loop; means only 2 unique ip addresses in client list (3 people total, including me; in this case, stop search for next_next_index, and only send anything to next_index
+            next_next_item = None
+            print(f"{string_identifier}: only 2 other client ip addresses (length {len(client_list)}, so only forwarding heartbeats to one client")
+            print(f"-------------------------------------------------------------------------------------------------------")
+            return [next_item]
+
+    if next_next_item is not None and next_next_item != original_next_person: 
+        print(f"{string_identifier}: 2nd forward - skipped over {original_next_person['student_name']} to forward heartbeat to {next_next_item['student_name']}")
+    
+    next_items.append(next_next_item)
+    return next_items
+
 # client
 def run_client(): 
     global num_heartbeats_sent
     global client_list
+
     while True: 
         purge_client_list()
+        to_ping = []
         if num_heartbeats_sent < num_heartbeats_until_switch_ping: 
-            ip_addr_to_send_to = start_server_to_ping
-            send_heartbeat = True
+            to_ping.append(start_server_to_ping)
         else: 
-            if len(client_list) >= 1: 
-                ip_addr_to_send_to = client_list[get_alphabetical_next_index_from_me()]["ip_address"]
-                send_heartbeat = True
-            else: 
-                print(f"CLIENT: No one available to heartbeat to")
-                send_heartbeat = False
-        
-        if send_heartbeat: 
-            print(f"CLIENT: Sending my own heartbeat to {ip_addr_to_send_to}")
-            threading.Thread(target=send_heartbeat_to_ip, args=(ip_addr_to_send_to, "Charlotte", time.time(), server_ip_addr, "CLIENT"), daemon=True).start()
-            # send_heartbeat_to_ip(ip_addr_to_send_to, "Charlotte", time.time(), server_ip_addr, "CLIENT")
+            # if 0 other people, 0 should be on the to-ping list; if 1 other person, 1 should be on the to-ping list; if 2 other people, 2 should be on the to-ping list, if 3+, then still 2 other people on the to-ping list
+            num_to_ping = len(client_list)
+            if num_to_ping > 2: 
+                num_to_ping = 2
+            
+            to_ping = get_next_2_ip_addrs_to_send_to(server_ip, "CLIENT")
+            
+        if num_to_ping > 0 and len(to_ping) > 0: 
+            for person in to_ping: 
+                print(f"CLIENT: Sending my own heartbeat to {person['student_name']}")
+            threading.Thread(target=send_heartbeat_to_ip, args=(person['ip_address'], "Charlotte", time.time(), server_ip_addr, "CLIENT"), daemon=True).start()
             num_heartbeats_sent += 1
 
         time.sleep(10) # 10 second sleep before sending another heartbeat ping/checking if anyone available to send heartbeat ping to
@@ -130,48 +174,13 @@ def heartbeat(json_string):
     
     purge_client_list()
 
-    # send info to next 2 in chain
-    next_index = get_alphabetical_next_index_from_me()
-    orig_index = next_index # used to tell when there was a full loop (won't forward heartbeat anywhere in that case, bc no need to tell other one that they're alive)
-    next_item = client_list[next_index]
-    next_items = []
-    original_person = next_item
-    
-    while next_item["ip_address"] == ip_addr: # finding next available person who didn't originally send this heartbeat
-        next_index = get_next_client_index(next_index)
-        next_item = client_list[next_index]
-        if next_index == orig_index: # went in full loop and couldn't find any ip addresses that don't match; only 1 other person in network 
-            print(f"SERVER: only 1 other client ip address (length {len(client_list)}), so not forwarding their own heartbeats back to them")
-            print(f"-------------------------------------------------------------------------------------------------------")
-            return 0 # don't want to error out; will just ignore + not forward
-    
-    final_person = next_item
-    if final_person != original_person: 
-        print(f"SERVER: 1st forward - skipped over {original_person['student_name']} to forward heartbeat to {final_person['student_name']}")
-
-    next_items.append(next_item)
-
-    next_next_index = get_next_client_index(next_index)
-    next_next_item = client_list[next_next_index]
-    original_next_person = next_next_item
-    while next_next_item["ip_address"] == ip_addr: # don't want to send heartbeat back to the original person who sent it, or send to the same client as the other ping
-        next_next_index = get_next_client_index(next_next_index)
-        next_next_item = client_list[next_next_index]
-
-        if next_next_index == next_index: # went in full loop; means only 2 unique ip addresses in client list (3 people total, including me; in this case, stop search for next_next_index, and only send anything to next_index
-            next_next_item = None
-            print(f"SERVER: only 2 other client ip addresses (length {len(client_list)}, so only forwarding heartbeats to one client")
-            print(f"-------------------------------------------------------------------------------------------------------")
-            break
-    
-    if next_next_item is not None and next_next_item != original_next_person: 
-        print(f"SERVER: 2nd forward - skipped over {original_next_person['student_name']} to forward heartbeat to {next_next_item['student_name']}")
-    
-    next_items.append(next_next_item)
-
+    next_items = get_next_2_ip_addrs_to_send_to(ip_addr, "SERVER")
     for person in next_items: 
         if person is not None: 
          threading.Thread(target=send_heartbeat_to_ip, args=(person["ip_address"], name, timestamp, ip_addr, "SERVER"), daemon=True).start()
+
+    if len(next_items) == 0: 
+        print(f"SERVER: no one with an ip other than {ip_addr} available to propagate to")
     
     print(f"-------------------------------------------------------------------------------------------------------")
     return 0
