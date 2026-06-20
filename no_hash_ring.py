@@ -154,7 +154,9 @@ def heartbeat(json_string):
             # sort: https://stackoverflow.com/questions/72899/how-can-i-sort-a-list-of-dictionaries-by-a-value-of-the-dictionary-in-python
             client_list = sorted(client_list, key=lambda d: d["student_name"])
             print(f"SERVER: Added {ip_addr} for {name} at {timestamp} to client_list")
-            print(f"SERVER: {len(client_list)} people in client list: {client_list}")
+            to_print_list = [client["student_name"] for client in client_list]
+            to_print = ', '.join(to_print_list)
+            print(f"SERVER: {len(client_list)} people in client list: {to_print}")
         else: 
             # update timestamp of existing entry ONLY if new timestamp more recent than old
             client_index = next((index for (index, d) in enumerate(client_list) if d["ip_address"] == ip_addr), None)
