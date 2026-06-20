@@ -105,6 +105,8 @@ def get_next_2_ip_addrs_to_send_to(exclude_ip, string_identifier):
 def run_client(): 
     global num_heartbeats_sent
     global client_list
+    num_to_ping = 0
+    to_ping = []
 
     while True: 
         purge_client_list()
@@ -117,7 +119,7 @@ def run_client():
             if num_to_ping > 2: 
                 num_to_ping = 2
             
-            to_ping = get_next_2_ip_addrs_to_send_to(server_ip, "CLIENT")
+            to_ping = get_next_2_ip_addrs_to_send_to(server_ip_addr, "CLIENT")
             
         if num_to_ping > 0 and len(to_ping) > 0: 
             for person in to_ping: 
