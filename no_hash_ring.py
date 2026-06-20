@@ -19,7 +19,7 @@ socket.setdefaulttimeout(5)
 server_name = "Charlotte"
 server_ip_addr = "141.165.50.133"
 
-start_server_to_ping = "141.165.50.162"
+start_server_to_ping = {"student_name": "Hannah", "ip_address": "141.165.50.162"} # need to be able to access name and ip
 
 client_list = []
 num_heartbeats_sent = 0 # used for deciding when to stop pinging start server
