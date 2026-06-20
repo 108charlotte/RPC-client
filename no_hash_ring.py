@@ -7,6 +7,11 @@ import threading
 import difflib
 import socket
 
+'''
+notes: 
+    - 
+'''
+
 socket.setdefaulttimeout(5)
 
 server_name = "Charlotte"
