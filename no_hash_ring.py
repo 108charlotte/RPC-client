@@ -113,6 +113,7 @@ def run_client():
         to_ping = []
         if num_heartbeats_sent < num_heartbeats_until_switch_ping: 
             to_ping.append(start_server_to_ping)
+            num_to_ping = 1
         else: 
             # if 0 other people, 0 should be on the to-ping list; if 1 other person, 1 should be on the to-ping list; if 2 other people, 2 should be on the to-ping list, if 3+, then still 2 other people on the to-ping list
             num_to_ping = len(client_list)
