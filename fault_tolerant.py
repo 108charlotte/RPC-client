@@ -12,7 +12,7 @@ socket.setdefaulttimeout(5)
 server_name = "Charlotte"
 server_ip_addr = "141.165.50.133"
 
-start_server_to_ping = "141.165.50.153"
+start_server_to_ping = "141.165.50.162"
 
 client_list = []
 num_heartbeats_sent = 0 # used for deciding when to stop pinging start server
