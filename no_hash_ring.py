@@ -121,6 +121,7 @@ def run_client():
             
             to_ping = get_next_2_ip_addrs_to_send_to(server_ip_addr, "CLIENT")
             
+        print("CLIENT: to_ping - {to_ping}")
         if num_to_ping > 0 and len(to_ping) > 0: 
             for person in to_ping: 
                 print(f"CLIENT: Sending my own heartbeat to {person['student_name']}")
