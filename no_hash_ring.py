@@ -52,7 +52,9 @@ def purge_client_list():
     global client_list
     # go through client list and remove anything with a timestamp over 1 min old EXCEPT for my own client
     client_list = [client for client in client_list if abs(client["timestamp"] - time.time()) < 60]
-    print(f"\nSERVER: New client list, old timestamps removed: {client_list}")
+    to_print_list = [client["student_name"] for client in client_list]
+    to_print = ', '.join(to_print_list)
+    print(f"\nSERVER: New client list, old timestamps removed: {to_print}")
 
 def get_next_client_index(curr_index): 
     global client_list
