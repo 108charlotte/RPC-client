@@ -9,7 +9,9 @@ import socket
 
 '''
 notes: 
-    - 
+    - knowing whether or not an RPC for a heartbeat is worth propagating
+    - propagate to next 2 people in alphabet
+    - if u receive a heartbeat older than the most recent heartbeat you received, drop it
 '''
 
 socket.setdefaulttimeout(5)
@@ -21,6 +23,7 @@ start_server_to_ping = "141.165.50.153"
 
 client_list = []
 num_heartbeats_sent = 0 # used for deciding when to stop pinging start server
+num_heartbeats_until_switch_ping = 3
 
 def send_heartbeat_to_ip(ip_dest, student_name, timestamp, ip_address, string_identifier): 
     try: 
@@ -50,7 +53,7 @@ def purge_client_list():
     # go through client list and remove anything with a timestamp over 1 min old EXCEPT for my own client
     client_list = [client for client in client_list if abs(client["timestamp"] - time.time()) < 60]
     print(f"\nSERVER: New client list, old timestamps removed: {client_list}")
-    
+
 def get_next_client_index(curr_index): 
     global client_list
     return (curr_index + 1) % len(client_list)
@@ -60,9 +63,8 @@ def run_client():
     global num_heartbeats_sent
     global client_list
     while True: 
-        print(f"\nRUNNING CLIENT")
         purge_client_list()
-        if num_heartbeats_sent < 2: 
+        if num_heartbeats_sent < num_heartbeats_until_switch_ping: 
             ip_addr_to_send_to = start_server_to_ping
             send_heartbeat = True
         else: 
@@ -88,17 +90,15 @@ def heartbeat(json_string):
     name = context["student_name"]
     timestamp = int(context["timestamp"])
     ip_addr = context["ip_address"]
-    print("\nRUNNING SERVER")
-    print(f"--------------------------------------------------------------------")
+    print(f"-------------------------------------------------------------------------------------------------------")
     print(f"SERVER: Received heartbeat with name: {name}, timestamp: {timestamp}, ip_addr: {ip_addr}")
     
     if name == "Charlotte": 
         print(f"\nSERVER: Someone sent Charlotte to herself, don't propagate")
-        print(f"--------------------------------------------------------------------")
+        print(f"-------------------------------------------------------------------------------------------------------")
         return 0
     
     if abs(time.time() - timestamp) < 20:
-        print(f"SERVER: Timestamp {timestamp} valid for {name} at {ip_addr}")
         all_ip_addrs = [client["ip_address"] for client in client_list]
         # need to include timestamps and update
         if not ip_addr in all_ip_addrs: # ip address not already in list, then add to list along with name
@@ -108,39 +108,72 @@ def heartbeat(json_string):
             print(f"SERVER: Added {ip_addr} for {name} at {timestamp} to client_list")
             print(f"SERVER: {len(client_list)} people in client list: {client_list}")
         else: 
-            # update timestamp of existing entry
-            print(f"SERVER: Client exists in client list, updating client timestamp...")
+            # update timestamp of existing entry ONLY if new timestamp more recent than old
             client_index = next((index for (index, d) in enumerate(client_list) if d["ip_address"] == ip_addr), None)
             if client_index is None: 
                 print(f"SERVER: BUG - client index not found in list")
                 return 1
             else: 
-                client_list[client_index]["timestamp"] = timestamp
+                if client_list[client_index]["timestamp"] < timestamp: # received more recent information; in this case, continue and forward
+                    client_list[client_index]["timestamp"] = timestamp
+                    print(f"SERVER: {name} exists in client list, updated client timestamp")
+                else: 
+                    print(f"SERVER: {name} exists in client list, but timestamp older than most recent")
+                    print(f"-------------------------------------------------------------------------------------------------------")
+                    return 0 # don't forward since old
+
+                    
     else: 
         print(f"SERVER: Received invalid timestamp from {name} at {ip_addr} - {timestamp} was {abs(timestamp - time.time())} off")
-        print(f"--------------------------------------------------------------------")
+        print(f"-------------------------------------------------------------------------------------------------------")
         return 1
     
     purge_client_list()
 
-    # send info to next in chain
+    # send info to next 2 in chain
     next_index = get_alphabetical_next_index_from_me()
+    orig_index = next_index # used to tell when there was a full loop (won't forward heartbeat anywhere in that case, bc no need to tell other one that they're alive)
     next_item = client_list[next_index]
-    if next_item["ip_address"] == ip_addr: 
-        old_item = next_item
+    next_items = []
+    original_person = next_item
+    
+    while next_item["ip_address"] == ip_addr: # finding next available person who didn't originally send this heartbeat
         next_index = get_next_client_index(next_index)
         next_item = client_list[next_index]
-        print(f"SERVER: Skipping {old_item['student_name']} to go to {next_item['student_name']}")
-       
-    if next_item["ip_address"] == ip_addr: 
-        print(f"SERVER: too few people in network, not forwarding")
-        return 1
+        if next_index == orig_index: # went in full loop and couldn't find any ip addresses that don't match; only 1 other person in network 
+            print(f"SERVER: only 1 other client ip address (length {len(client_list)}), so not forwarding their own heartbeats back to them")
+            print(f"-------------------------------------------------------------------------------------------------------")
+            return 0 # don't want to error out; will just ignore + not forward
     
-    print(f"SERVER: forwarding {name} to {next_item['student_name']} (next in chain)")
-    threading.Thread(target=send_heartbeat_to_ip, args=(next_item["ip_address"], name, timestamp, ip_addr, "SERVER"), daemon=True).start()
-    # response = send_heartbeat_to_ip(next_item["ip_address"], name, timestamp, ip_addr, "SERVER")
-    print(f"--------------------------------------------------------------------")
+    final_person = next_item
+    if final_person != original_person: 
+        print(f"SERVER: 1st forward - skipped over {original_person['student_name']} to forward heartbeat to {final_person['student_name']}")
 
+    next_items.append(next_item)
+
+    next_next_index = get_next_client_index(next_index)
+    next_next_item = client_list[next_next_index]
+    original_next_person = next_next_item
+    while next_next_item["ip_address"] == ip_addr: # don't want to send heartbeat back to the original person who sent it, or send to the same client as the other ping
+        next_next_index = get_next_client_index(next_next_index)
+        next_next_item = client_list[next_next_index]
+
+        if next_next_index == next_index: # went in full loop; means only 2 unique ip addresses in client list (3 people total, including me; in this case, stop search for next_next_index, and only send anything to next_index
+            next_next_item = None
+            print(f"SERVER: only 2 other client ip addresses (length {len(client_list)}, so only forwarding heartbeats to one client")
+            print(f"-------------------------------------------------------------------------------------------------------")
+            break
+    
+    if next_next_item is not None and next_next_item != original_next_person: 
+        print(f"SERVER: 2nd forward - skipped over {original_next_person['student_name']} to forward heartbeat to {next_next_item['student_name']}")
+    
+    next_items.append(next_next_item)
+
+    for person in next_items: 
+        if person is not None: 
+         threading.Thread(target=send_heartbeat_to_ip, args=(person["ip_address"], name, timestamp, ip_addr, "SERVER"), daemon=True).start()
+    
+    print(f"-------------------------------------------------------------------------------------------------------")
     return 0
 
 def run_server(): 
