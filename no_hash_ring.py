@@ -12,6 +12,7 @@ notes:
     - knowing whether or not an RPC for a heartbeat is worth propagating
     - propagate to next 2 people in alphabet
     - if u receive a heartbeat older than the most recent heartbeat you received, drop it
+TODO: fix client list not updating
 '''
 
 socket.setdefaulttimeout(5)
