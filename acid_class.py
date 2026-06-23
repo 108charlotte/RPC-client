@@ -6,8 +6,6 @@ import random
 import socketserver
 from xmlrpc.server import SimpleXMLRPCServer, SimpleXMLRPCRequestHandler
  
-# https://code.activestate.com/recipes/425043-simple-threaded-xml-rpc-server/: threaded mix-in
-class AsyncXMLRPCServer(socketserver.ThreadingMixIn,SimpleXMLRPCServer): pass
 
 node_ports = [6363, 6364, 6365]
 local_ip_addr = "127.0.0.1"
@@ -44,7 +42,10 @@ class Server:
             unique_items.append(item)
         print(f"Quorum: found {len(unique_items)} unique items in this server's db")
         for address in client_addresses: 
-            db = self.send_read_to_ip(address, False)
+            if self.port in address: 
+                db = self.read_all(False)
+            else: 
+                db = self.send_read_to_ip(address, False)
             for item in db: 
                 try: 
                     index = unique_items.index(item)
@@ -64,7 +65,7 @@ class Server:
         print(f"Quorum: beginning read info send to {address}, propagate: {propagate}")
         try: 
             with xmlrpc.client.ServerProxy("http://" + address) as proxy: 
-                response = proxy.read(propagate)
+                response = proxy.read_all(propagate)
                 return response
         except Exception as e: 
             print(f"Quorum: read error {e}")
@@ -117,7 +118,10 @@ class Server:
         responses = []
         for address in client_addresses: 
             print(f"Getting write response from {address} using key: {data['key']}, value: {data['value']}, timestamp: {data['timestamp']}, propagate: {False}...")
-            response = self.send_write_to_ip(address, data['key'], data['value'], data['timestamp'], False) # propagate should always be false when trying to get quorum from others
+            if self.port in address: 
+                response = self.write(json.dumps({'key': data['key'], 'value': data['value'], 'timestamp': data['timestamp'], 'propagate': False}))
+            else: 
+                response = self.send_write_to_ip(address, data['key'], data['value'], data['timestamp'], False) # propagate should always be false when trying to get quorum from others
             print(f"Response from {address}: {response}")
             print("-------------------------------------------------------------------------------------------------------------------------")
             responses.append({'port': address, 'value': response})
@@ -177,7 +181,8 @@ class Server:
             return 0 # no 1s returned, nothing failed
 
     def run_self(self): 
-        with AsyncXMLRPCServer(('', self.port), SimpleXMLRPCRequestHandler) as server: 
+        global local_ip_addr
+        with SimpleXMLRPCServer((local_ip_addr, self.port)) as server: 
             server.register_introspection_functions()
             server.register_function(write, "write")
             server.register_function(read_all, "read_all")
@@ -195,7 +200,7 @@ def run_client():
                 key = random.choice(options)
                 value = random.choice(options)
                 timestamp = time.time()
-            with xmlrpc.client.ServerProxy("http://" + address) as proxy: 
+            with xmlrpc.client.ServerProxy(("http://" + address)) as proxy: 
                 if to_write: 
                     key = random.choice(options)
                     value = random.choice(options)
