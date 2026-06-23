@@ -3,9 +3,9 @@ import time
 import json
 import threading
 import random
-import socketserver
-from xmlrpc.server import SimpleXMLRPCServer, SimpleXMLRPCRequestHandler
- 
+from xmlrpc.server import SimpleXMLRPCServer
+# note: :%y+ to copy to clipboard
+# not sure if this is actually acid :'( but I think so. the biggest issue here is the security thing with my setup, since the moment that ehre's a malicious actor, this will break
 
 node_ports = [6363, 6364, 6365]
 local_ip_addr = "127.0.0.1"
@@ -37,21 +37,21 @@ class Server:
 
         client_addresses = [local_ip_addr + ":" + str(port) for port in node_ports]
         unique_items = []
-        for item in self.database:
-            item["quorum_count"] = 1
-            unique_items.append(item)
-        print(f"Quorum: found {len(unique_items)} unique items in this server's db")
+        just_keys_for_matching = []
         for address in client_addresses: 
             if str(self.port) in address: 
                 db = self.read_all(False)
             else: 
                 db = self.send_read_to_ip(address, False)
+
             for item in db: 
                 try: 
-                    index = unique_items.index(item)
+                    index = just_keys_for_matching.index(item['key'])
                     unique_items[index]["quorum_count"] += 1
                 except ValueError: 
                     unique_items.append(item)
+                    just_keys_for_matching.append(item['key'])
+                    unique_items[-1]["quorum_count"] = 1
         print(f"Quorum: found {len(unique_items)} unique items total")
         min_val_for_consensus = len(node_ports) / 2
         to_return = []
@@ -101,6 +101,7 @@ class Server:
                     self.database[i]['write_quorum_loading'] = False
                     updated = True
             if not updated and response == 0: # value not found in db
+                context = {'key': key, 'value': value, 'timestamp': timestamp, 'write_quorum_loading': False, 'quorum_count': 0} # re-defining to include all keys that I need
                 self.database.append(context)
                 print(f"Could not find key in db, so added")
             return 0
@@ -137,17 +138,20 @@ class Server:
             responses = self.get_write_quorum(json_string)
             print(f"Responses: {responses}")
             total = sum([r['value'] for r in responses]) # responses = dictionary
-            response = 0 if total > len(node_ports) / 2 else 1
+            response = 0 if total < len(node_ports) / 2 else 1
             print(f"Writing, received {responses} from quorum")
-            to_inform = [r['port'] for r in responses if r['value'] == 0]
+            to_inform = [r['port'] for r in responses] # now informing everyone of quorum results, used to restrict to those that had agreed
             for server in to_inform: 
-                try: 
-                    with xmlrpc.client.ServerProxy("http://" + server) as proxy: 
-                        force_write_response = proxy.update_db_after_response(json.dumps(context), response)
-                        print(f"Force write to {server} responded with {force_write_response}")
-                except Exception as e: 
-                    print(f"Force write to {server} returned error {e}")
-                    return 1
+                if str(self.port) in server: 
+                    self.update_db_after_response(json.dumps(context), response)
+                else: 
+                    try: 
+                        with xmlrpc.client.ServerProxy("http://" + server) as proxy: 
+                            force_write_response = proxy.update_db_after_response(json.dumps(context), response)
+                            print(f"Force write to {server} responded with {force_write_response}, new database: {proxy.read_all(False)}")
+                    except Exception as e: 
+                        print(f"Force write to {server} returned error {e}")
+                        return 1
             return 0
         else: 
             try: 
@@ -160,7 +164,7 @@ class Server:
                 return 1
 
             if key is None or value is None or timestamp is None: 
-                print(f"SERVER: write received non-propagate request with malformed data, returning {e}")
+                print(f"SERVER: write received non-propagate request with malformed data")
                 return 1
             
             if random.random() < fail_chance: 
@@ -177,50 +181,49 @@ class Server:
                             return 1 # reject change bc old TODO: not sure if this is the right course of action
                     else: 
                         print("SERVER: write failing because other write in progress")
-                        return 0
+                        return 1
             return 0 # no 1s returned, nothing failed
 
-    def run_self(self): 
+    def start(self): 
         global local_ip_addr
         with SimpleXMLRPCServer((local_ip_addr, self.port)) as server: 
             server.register_introspection_functions()
-            server.register_function(write, "write")
-            server.register_function(read_all, "read_all")
-            server.register_function(update_db_after_response, "update_db_after_response")
+            server.register_function(self.write, "write")
+            server.register_function(self.read_all, "read_all")
+            server.register_function(self.update_db_after_response, "update_db_after_response")
             server.serve_forever()
 
 def run_client(): 
-    options = ["hihi", "r u alive?", "i'm alive", 6, 9, None]
+    options = ["hihi", "r u alive?", "i'm alive", 6, 9]
     while True: 
         try: 
             to_write = random.randint(0, 1) == 0
             port_to_send_to = random.choice(node_ports)
             address = local_ip_addr + ":" + str(port_to_send_to)
-            if to_write: 
-                key = random.choice(options)
-                value = random.choice(options)
-                timestamp = time.time()
             with xmlrpc.client.ServerProxy(("http://" + address)) as proxy: 
                 if to_write: 
                     key = random.choice(options)
                     value = random.choice(options)
-                    timestamp = time.time()
+                    timestamp = int(time.time())
+                    print(f"Client: sending to http://{address}: key: {key}, value: {value}, timestamp: {timestamp}, propagate: True")
                     response = proxy.write(json.dumps({'key': key, 'value': value, 'timestamp': timestamp, 'propagate': True}))
                 else: 
                     response = proxy.read_all()
                 print(f"Client received response: {response}")
         except Exception as e: 
             print(f"Client received exception: {e}")
-        time.sleep(10)
+        time.sleep(2)
 
-def run_server(index:int): 
+def run_server(index:int): # this doesn't rly need its own func anymore
     server = Server(node_ports[index])
+    server.start()
 
 def start_all_servers(): 
     global local_ip_addr
     for i in range(len(node_ports)): 
-        print(f"Starter: creating server {i} at {node_ports[i]} at ip: {local_ip_addr}")
+        print(f"Starter: creating server {i+1} at port: {node_ports[i]} at ip: {local_ip_addr}")
         threading.Thread(target=run_server, args=(i,), daemon=True).start()
+    print("-------------------------------------------------------------------------------------------------------------------------")
 
 start_all_servers()
 #threading.Thread(target=run_client, daemon=True).start()
