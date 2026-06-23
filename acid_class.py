@@ -42,7 +42,7 @@ class Server:
             unique_items.append(item)
         print(f"Quorum: found {len(unique_items)} unique items in this server's db")
         for address in client_addresses: 
-            if self.port in address: 
+            if str(self.port) in address: 
                 db = self.read_all(False)
             else: 
                 db = self.send_read_to_ip(address, False)
@@ -118,7 +118,7 @@ class Server:
         responses = []
         for address in client_addresses: 
             print(f"Getting write response from {address} using key: {data['key']}, value: {data['value']}, timestamp: {data['timestamp']}, propagate: {False}...")
-            if self.port in address: 
+            if str(self.port) in address: 
                 response = self.write(json.dumps({'key': data['key'], 'value': data['value'], 'timestamp': data['timestamp'], 'propagate': False}))
             else: 
                 response = self.send_write_to_ip(address, data['key'], data['value'], data['timestamp'], False) # propagate should always be false when trying to get quorum from others
