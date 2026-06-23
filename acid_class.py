@@ -7,7 +7,7 @@ from xmlrpc.server import SimpleXMLRPCServer
 # note: :%y+ to copy to clipboard
 # not sure if this is actually acid :'( but I think so. the biggest issue here is the security thing with my setup, since the moment that ehre's a malicious actor, this will break
 
-node_ports = [6363, 6364, 6365]
+node_ports = [6363, 6364, 6365, 6366]
 local_ip_addr = "127.0.0.1"
 fail_chance = 0.2
 
