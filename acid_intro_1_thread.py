@@ -1,13 +1,11 @@
 import xmlrpc.client
 import time
 import json
+from xmlrpc.server import SimpleXMLRPCServer
 import threading
 import random
-import socketserver
-from xmlrpc.server import SimpleXMLRPCServer, SimpleXMLRPCRequestHandler
- 
-# https://code.activestate.com/recipes/425043-simple-threaded-xml-rpc-server/: threaded mix-in
-class AsyncXMLRPCServer(socketserver.ThreadingMixIn,SimpleXMLRPCServer): pass
+# so apparently I can't 
+
 
 node_ports = [6363, 6364, 6365]
 local_ip_addr = "127.0.0.1"
@@ -17,39 +15,13 @@ database = []
 
 fail_chance = 0.2
 
-def run_client(): 
-    options = ["hihi", "r u alive?", "i'm alive", 6, 9, None]
-    while True: 
-        try: 
-            to_write = random.randint(0, 1) == 0
-            port_to_send_to = random.choice(node_ports)
-            address = local_ip_addr + ":" + str(port_to_send_to)
-            if to_write: 
-                key = random.choice(options)
-                value = random.choice(options)
-                timestamp = time.time()
-            with xmlrpc.client.ServerProxy("http://" + address) as proxy: 
-                if to_write: 
-                    key = random.choice(options)
-                    value = random.choice(options)
-                    timestamp = time.time()
-                    response = proxy.write(json.dumps({'key': key, 'value': value, 'timestamp': timestamp, 'propagate': True}))
-                else: 
-                    response = proxy.read_all()
-                print(f"Client received response: {response}")
-        except Exception as e: 
-            print(f"Client received exception: {e}")
-        time.sleep(10)
-
-def read_all(propagate:bool=True): 
-    global database
+def read_all(propagate): 
     # reset local database quorum count
     for i in range(len(database)):
         database[i]['quorum_count'] = 0
 
     if propagate: 
         responses = get_read_quorum()
-        database = responses # update to most recent/agreed upon data
         print(f"Responses: {responses}")
         return responses
     else: 
@@ -59,7 +31,6 @@ def get_read_quorum():
     global database
     global node_ports
     global local_ip_addr
-    print("-------------------------------------------------------------------------------------------------------------------------")
 
     client_addresses = ["http://" + local_ip_addr + ":" + str(port) for port in node_ports]
     unique_items = []
@@ -91,22 +62,22 @@ def send_read_to_ip(address, propagate:bool=True):
             response = proxy.read(propagate)
             return response
     except Exception as e: 
-        print(f"Quorum: read error {e}")
+        print(f"Quorum: error {e}")
         return 0
 
 def send_write_to_ip(address, key, value, timestamp, propagate:bool=True): 
-    print(f"Quorum: beginning write info send, propagate: {propagate}")
+    print(f"Quorum: beginning write info sent, propagate: {propagate}")
     try: 
         with xmlrpc.client.ServerProxy("http://" + address) as proxy: 
             response = proxy.write(json.dumps({'key': key, 'value': value, 'timestamp': timestamp, 'propagate': propagate}))
             return response
     except Exception as e: 
-        print(f"Quorum: write error {e}")
+        print(f"Quorum: error {e}")
         return 0
+
 
 def update_db_after_response(json_string, response:int): # super duper not secure, but if I stored my_response it wouldn't work for new items, or I would just store every single item in every single db along with how it responded, which would not be ideal, so I'm doing this for now
     global database
-    print("-------------------------------------------------------------------------------------------------------------------------")
     try: 
         context = json.loads(json_string)
         key = context['key']
@@ -135,8 +106,7 @@ def update_db_after_response(json_string, response:int): # super duper not secur
 def get_write_quorum(json_string): 
     global node_ports
     global local_ip_addr
-
-    print("-------------------------------------------------------------------------------------------------------------------------") 
+    
     data = json.loads(json_string)
     client_addresses = [local_ip_addr + ":" + str(port) for port in node_ports]
     responses = []
@@ -144,23 +114,21 @@ def get_write_quorum(json_string):
         print(f"Getting write response from {address} using key: {data['key']}, value: {data['value']}, timestamp: {data['timestamp']}, propagate: {False}...")
         response = send_write_to_ip(address, data['key'], data['value'], data['timestamp'], False) # propagate should always be false when trying to get quorum from others
         print(f"Response from {address}: {response}")
-        print("-------------------------------------------------------------------------------------------------------------------------")
         responses.append({'port': address, 'value': response})
     return responses
 
 def write(json_string): 
     # updating write quorum loading to true
-    print("-------------------------------------------------------------------------------------------------------------------------")
+    print(f"Received write")
     context = json.loads(json_string)
-    propagate = context['propagate'] # if context['propagate'] else True # True by default
+    propagate = context['propagate'] if context['propagate'] else True # True by default
     if propagate: 
         print(f"SERVER: received propagate write request")
         responses = get_write_quorum(json_string)
         print(f"Responses: {responses}")
-        total = sum([r['value'] for r in responses]) # responses = dictionary
+        total = sum([response['value'] for response in responses]) # returns a dictionary
         response = 0 if total > len(node_ports) / 2 else 1
-        print(f"Writing, received {responses} from quorum")
-        to_inform = [r['port'] for r in responses if r['value'] == 0]
+        to_inform = [response['address'] for response in responses if response['value'] == 0]
         for server in to_inform: 
             try: 
                 with xmlrpc.client.ServerProxy("http://" + server) as proxy: 
@@ -203,7 +171,6 @@ def send_updates_to_db():
     keys = ["hi", "hahaha", "why", "r u serious", None]
     values = ["0", "1", "3", "50", None]
     client_addresses = [local_ip_addr + ":" + str(port) for port in node_ports]
-    print("-------------------------------------------------------------------------------------------------------------------------")
 
     for i in range(5): 
         send_to = i % len(node_ports)
@@ -213,19 +180,17 @@ def send_updates_to_db():
 
 def run_server(index:int): 
     global local_ip_addr
-    with AsyncXMLRPCServer(('', node_ports[index]), SimpleXMLRPCRequestHandler) as server: 
+    with SimpleXMLRPCServer((local_ip_addr, node_ports[index])) as server: 
         server.register_introspection_functions()
         server.register_function(write, "write")
         server.register_function(read_all, "read_all")
-        server.register_function(update_db_after_response, "update_db_after_response")
         server.serve_forever()
 
 def start_all_servers(): 
     global local_ip_addr
     for i in range(len(node_ports)): 
         print(f"Starter: creating server {i} at {node_ports[i]} at ip: {local_ip_addr}")
-        threading.Thread(target=run_server, args=(i,), daemon=True).start()
+        server = threading.Thread(target=run_server, args=(i,), daemon=True).start()
 
 start_all_servers()
-#threading.Thread(target=run_client, daemon=True).start()
-run_client()
+send_updates_to_db() # not sure if I can call this after
