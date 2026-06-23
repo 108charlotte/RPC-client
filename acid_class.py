@@ -37,14 +37,14 @@ class Server:
         global local_ip_addr
         print("-------------------------------------------------------------------------------------------------------------------------")
 
-        client_addresses = ["http://" + local_ip_addr + ":" + str(port) for port in node_ports]
+        client_addresses = [local_ip_addr + ":" + str(port) for port in node_ports]
         unique_items = []
         for item in self.database:
             item["quorum_count"] = 1
             unique_items.append(item)
         print(f"Quorum: found {len(unique_items)} unique items in this server's db")
         for address in client_addresses: 
-            db = self.read_all(False)
+            db = self.send_read_to_ip(address, False)
             for item in db: 
                 try: 
                     index = unique_items.index(item)
@@ -61,14 +61,14 @@ class Server:
         return to_return
 
     def send_read_to_ip(self, address, propagate:bool=True): 
-        print(f"Quorum: beginning read info sent, propagate: {propagate}")
+        print(f"Quorum: beginning read info send to {address}, propagate: {propagate}")
         try: 
             with xmlrpc.client.ServerProxy("http://" + address) as proxy: 
                 response = proxy.read(propagate)
                 return response
         except Exception as e: 
             print(f"Quorum: read error {e}")
-            return 0
+            return []
 
     def send_write_to_ip(self, address, key, value, timestamp, propagate:bool=True): 
         print(f"Quorum: beginning write info send, propagate: {propagate}")
